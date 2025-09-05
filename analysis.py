@@ -21,70 +21,49 @@ class CreateData:
         plate_schema_fn: str,
         drug_info_fn: str,
         plate_directories: List[str],
+        include_phagocytosis: bool = True,
     ):
 
-        self._define_features()
+        # get the mapping between the drug code and well row and column
         self._extract_drug_info_from_plate_schema(plate_schema_fn)
+
+        # get the mapping between the drug code and the drug name and concentration
         self._extract_drug_info_from_drug_conditions(drug_info_fn)
-        self._load_plate_directories(plate_directories)
+
+        # load Cell Painting, and possibly phagocytosis, data
+        self._load_plate_directories(plate_directories, include_phagocytosis=include_phagocytosis)
+
+        # given the mapping between drug codes and names/concentrations, add names and conentrations
         self._add_drug_info()
 
-
-    def _define_features(self):
-
-        self.features = [
-            ["Cell", "Membrane", "Cytoplasm", "Ring", "Nucleus"],
-            ["488", "512", "555", "641", "33342"],
-            ["Radial Mean", "Length", "Deviation", "Compactness", "Symmetry"],
-            ["Dark", "Hole", "Edge", "Filter", "Bright", "Valley", "Saddle", "Ridge", "Spot", "Profile"]
+        # list of features to be added to adata.obs
+        self.observation_features = [
+            "Plate", "Drug", "Concentration", "All Cells - Number of Objects",
+            "Non border cells - Number of Objects",
+            "Non border cells - Total Spot Area - Mean per Well",
+            "Non border cells - Number of Spots - Mean per Well",
+            "Spots Substrate - Spot Area [px²] - Mean per Well",
+            "Spots Substrate - Relative Spot Intensity - Mean per Well",
         ]
-        self.feature_size = [len(f) for f in self.features]
 
-
-    def count_features(self, feature_list):
-
-        counts = np.zeros(self.feature_size, dtype=np.int16)
-        for feature in feature_list:
-            i = [None, None, None, None]
-            for j in range(4):
-                for n, f in enumerate(self.features[j]):
-                    if f in feature:
-                        i[j] = n
-                        break
-
-            if np.all(np.array([not j is None for j in i])):
-                counts[i[0], i[1], i[2], i[3]] += 1
-            else:
-                pass
-                # print(feature)
-
-        return counts
-
-    def plot_feature_counts(self, feature_list):
-
-        counts = self.count_features(feature_list)
-        f, ax = plt.subplots(1, 4, figsize=(11, 5))
-        axes = [(0, 1), (0, 2), (1, 2), (1, 3)]
-        axes_remain = [(2, 3), (1, 3), (0, 3), (0, 2)]
-        for n in range(4):
-            c = np.sum(counts, axis=axes[n])
-            ax[n].imshow(c)
-            ax[n].grid(False)
-            n0 = len(self.features[axes_remain[n][0]])
-            n1 = len(self.features[axes_remain[n][1]])
-            ax[n].set_yticks(np.arange(n0), self.features[axes_remain[n][0]], fontsize=8)
-            ax[n].set_xticks(np.arange(n1), self.features[axes_remain[n][1]], fontsize=8, rotation=-45, ha="left")
-            divider = make_axes_locatable(ax[n])
-            cax = divider.append_axes('right', size='3%', pad=0.02)
-            norm = matplotlib.colors.Normalize(vmin=0, vmax=np.max(c))
-            f.colorbar(cm.ScalarMappable(norm=norm), cax=cax, orientation='vertical')
-
-        plt.tight_layout()
-        plt.show()
-
+        # list of Phagocytosis features we wish to normalize
+        self.features_to_normalize = [
+                "All Cells - Number of Objects",
+                "Non border cells - Number of Objects",
+                "Non border cells - Total Spot Area - Mean per Well",
+                "Non border cells - Number of Spots - Mean per Well",
+                "Spots Substrate - Spot Area [px²] - Mean per Well",
+                "Spots Substrate - Relative Spot Intensity - Mean per Well",
+                "Phagocytosis per cell",
+        ]
 
 
     def _extract_drug_info_from_plate_schema(self, plate_schema_fn):
+
+        """
+        Example plate_schema_fn = "data/Plate_setup_SchemaA_11Dx3x7conc.xlsx"
+        Excel file that links the drug codes (e.g. Drug8_c5) with the well row and column
+        """
 
         df = pd.read_excel(plate_schema_fn, sheet_name='destination_plate_schema')
         _, n_cols = df.shape
@@ -104,6 +83,7 @@ class CreateData:
 
     def _extract_drug_info_from_drug_conditions(self, drug_info_fn):
 
+        """ Contains the mapping between the drug code and each drug name and concentration"""
         self.drug_info = pd.read_excel(drug_info_fn, sheet_name='Sheet1')
 
     @staticmethod
@@ -116,7 +96,14 @@ class CreateData:
 
         return df
 
-    def _load_plate_directories(self, plate_directories):
+    def _load_plate_directories(self, plate_directories, include_phagocytosis=True):
+
+        """
+        Load the data for each plate.
+        Each directory contains two .txt files: one for cell painting (contains CP in the name) and one
+        for phagocytosis (contains Phago in the name).
+        Returns a pandas dataframe containing the cell painting and phagocytosis results for each plate, row and column
+        """
 
         dataframes = []
         for n, path in enumerate(plate_directories):
@@ -127,7 +114,7 @@ class CreateData:
                     df_cp = self._extract_info_from_txt(fn)
                     df_cp = self._column_name_correction(df_cp)
 
-                elif "Phago" in fn:
+                elif include_phagocytosis and "Phago" in fn:
                     fn = os.path.join(path, fn)
                     df_phago = self._extract_info_from_txt(fn)
 
@@ -138,12 +125,14 @@ class CreateData:
                     df_cp["Plate"] = len(df_cp) * [f"Plate {n}"]
                     break
 
-            dataframes.append(
-                pd.merge(df_cp, df_phago, on=['Row', 'Column'], how='inner')
-            )
+            if include_phagocytosis:
+                dataframes.append(
+                    pd.merge(df_cp, df_phago, on=['Row', 'Column'], how='inner')
+                )
+            else:
+                dataframes.append(df_cp)
+
         self.df = pd.concat(dataframes, ignore_index=True)
-
-
 
     @staticmethod
     def _extract_info_from_txt(fn):
@@ -164,6 +153,9 @@ class CreateData:
         return pd.DataFrame(x)
 
     def _add_drug_info(self):
+
+        """Given the mapping between the drug code and the name and concentration, add the drug name and concentraion
+        for each plate, row and column"""
 
         drug_name = []
         drug_conc = []
@@ -192,15 +184,7 @@ class CreateData:
     def _add_normalized_data(self, baseline_drug = "c_aB_DM"):
 
         n_samples = self.adata.shape[0]
-        for k in [
-            "All Cells - Number of Objects",
-            "Non border cells - Number of Objects",
-            "Non border cells - Total Spot Area - Mean per Well",
-            "Non border cells - Number of Spots - Mean per Well",
-            "Spots Substrate - Spot Area [px²] - Mean per Well",
-            "Spots Substrate - Relative Spot Intensity - Mean per Well",
-            "Phagocytosis per cell",
-        ]:
+        for k in self.features_to_normalize:
             vals = np.zeros(n_samples)
 
             for plate in self.adata.obs.Plate.unique():
@@ -259,14 +243,7 @@ class CreateData:
 
         df_var = {"feature": features}
         df_obs = {}
-        for k in [
-            "Plate", "Drug", "Concentration", "All Cells - Number of Objects",
-            "Non border cells - Number of Objects",
-            "Non border cells - Total Spot Area - Mean per Well",
-            "Non border cells - Number of Spots - Mean per Well",
-            "Spots Substrate - Spot Area [px²] - Mean per Well",
-            "Spots Substrate - Relative Spot Intensity - Mean per Well",
-        ]:
+        for k in self.observation_features:
             df_obs[k] = np.array(self.df[k].values)[idx_rows]
             if not k in  ["Plate", "Drug"]:
                 df_obs[k] = df_obs[k].astype(np.float32)
@@ -277,6 +254,13 @@ class CreateData:
 
         self.adata = ad.AnnData(X = x, obs = df_obs, var = df_var)
         self._add_normalized_data()
+
+class Analysis:
+
+    def __init__(self, adata):
+
+        self.adata = adata.copy()
+        self._define_features()
 
     def pls_regression(self, target_name, n_components=10):
 
@@ -346,7 +330,6 @@ class CreateData:
         return idx_sort
 
 
-
     def plot_dose_response(self, drug, k = "Non border cells - Number of Spots - Mean per Well"):
 
         a0 = self.adata[self.adata.obs.Drug == "c_aB_DM"]
@@ -370,3 +353,56 @@ class CreateData:
         #plt.xticks([10, 100, 1000], minor=False)  # Major ticks
 
         plt.show()
+
+    def _define_features(self):
+
+        self.features = [
+            ["Cell", "Membrane", "Cytoplasm", "Ring", "Nucleus"],
+            ["488", "512", "555", "641", "33342"],
+            ["Radial Mean", "Length", "Deviation", "Compactness", "Symmetry"],
+            ["Dark", "Hole", "Edge", "Filter", "Bright", "Valley", "Saddle", "Ridge", "Spot", "Profile"]
+        ]
+        self.feature_size = [len(f) for f in self.features]
+
+
+    def count_features(self, feature_list):
+
+        counts = np.zeros(self.feature_size, dtype=np.int16)
+        for feature in feature_list:
+            i = [None, None, None, None]
+            for j in range(4):
+                for n, f in enumerate(self.features[j]):
+                    if f in feature:
+                        i[j] = n
+                        break
+
+            if np.all(np.array([not j is None for j in i])):
+                counts[i[0], i[1], i[2], i[3]] += 1
+            else:
+                pass
+                # print(feature)
+
+        return counts
+
+    def plot_feature_counts(self, feature_list):
+
+        counts = self.count_features(feature_list)
+        f, ax = plt.subplots(1, 4, figsize=(11, 5))
+        axes = [(0, 1), (0, 2), (1, 2), (1, 3)]
+        axes_remain = [(2, 3), (1, 3), (0, 3), (0, 2)]
+        for n in range(4):
+            c = np.sum(counts, axis=axes[n])
+            ax[n].imshow(c)
+            ax[n].grid(False)
+            n0 = len(self.features[axes_remain[n][0]])
+            n1 = len(self.features[axes_remain[n][1]])
+            ax[n].set_yticks(np.arange(n0), self.features[axes_remain[n][0]], fontsize=8)
+            ax[n].set_xticks(np.arange(n1), self.features[axes_remain[n][1]], fontsize=8, rotation=-45, ha="left")
+            divider = make_axes_locatable(ax[n])
+            cax = divider.append_axes('right', size='3%', pad=0.02)
+            norm = matplotlib.colors.Normalize(vmin=0, vmax=np.max(c))
+            f.colorbar(cm.ScalarMappable(norm=norm), cax=cax, orientation='vertical')
+
+        plt.tight_layout()
+        plt.show()
+
