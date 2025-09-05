@@ -17,8 +17,10 @@ The data for this analysis comes in three parts:
   - an excel file that maps the drug code to the drug name and concentration
   - a list of directories, each including a .txt file with the well-averaged CP features, and (optional) the well-averaged phagocytosis data.
 
+These three data sources are found in the data directory, which was the result of a prelinary drug screen testing the effect of ~33 drugs on HMC3 phagocytosis.
+
 In analysis.py, the class CreateData will create an h5ad (AnnData) file, in which .X matrix contains the normalized CP data, obs
-contains the drug and (optional) phagocytosis data, along with the well location, and var contains the CP feature names.
+contains the well location, drug name and concentration, and (optional) phagocytosis data, and var contains the CP feature names.
 The class Analysis allows one to plot the various dose-response curves, perform PLS regression, etc. This file should be customized based on the user's desired goals.
 
 
