@@ -5,6 +5,7 @@
 ### Requirements  
 Aside from standard packages (numpy, pandas, sklearn, matplotlib):  
 anndata (tested using 0.10.7)  
+scanpy (testing using 1.10.1)
 
 ### Introductions  
 
