@@ -24,7 +24,7 @@ class CreateData:
         include_phagocytosis: bool = True,
     ):
 
-        # get the mapping between the drug code and well row and column
+        # get the mapping between the drug code and the plate well row and column
         self._extract_drug_info_from_plate_schema(plate_schema_fn)
 
         # get the mapping between the drug code and the drug name and concentration
@@ -137,6 +137,12 @@ class CreateData:
     @staticmethod
     def _extract_info_from_txt(fn):
 
+        """
+        Extract data from .txt file
+        Assume column names are in row 8
+        Data is row 9 and after
+        """
+
         with open(fn, "r") as f:
             for n in range(10000):
                 data = f.readline()
@@ -154,7 +160,7 @@ class CreateData:
 
     def _add_drug_info(self):
 
-        """Given the mapping between the drug code and the name and concentration, add the drug name and concentraion
+        """Given the mapping between the drug code and the name and concentration, add the drug name and concentration
         for each plate, row and column"""
 
         drug_name = []
