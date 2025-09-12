@@ -38,7 +38,7 @@ class CreateData:
 
         # list of features to be added to adata.obs
         self.observation_features = [
-            "Plate", "Drug", "Concentration", "All Cells - Number of Objects",
+            "Plate", "Row", "Column", "Drug", "Concentration", "All Cells - Number of Objects",
             "Non border cells - Number of Objects",
             "Non border cells - Total Spot Area - Mean per Well",
             "Non border cells - Number of Spots - Mean per Well",
